@@ -1,0 +1,21 @@
+{
+  "name": "@lcui/react",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "repository": "https://gitee.com/lcui-dev/react",
+  "author": "Liu <lc-soft@live.cn>",
+  "description": "A React library for LCUI development",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^18.2.0"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "@types/react": "^18.2.23"
+  }
+}
