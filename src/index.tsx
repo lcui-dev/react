@@ -48,3 +48,5 @@ Button.shouldPreRender = true;
 Link.shouldPreRender = true;
 Text.shouldPreRender = true;
 TextInput.shouldPreRender = true;
+
+export default React;
