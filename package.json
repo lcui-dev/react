@@ -8,6 +8,7 @@
   "author": "Liu <lc-soft@live.cn>",
   "description": "A React library for LCUI development",
   "license": "MIT",
+  "files": ["lib"],
   "dependencies": {
     "react": "^18.2.0"
   },
