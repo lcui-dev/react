@@ -13,15 +13,19 @@ npm install -D @lcui/react react @types/react
 ## 使用
 
 ```tsx
-import { Text, TextInput } from '@lcui/react';
+import { useState, useRef, fmt, Text, TextInput, Button } from '@lcui/react';
 import styles from './app.module.css';
 
 export default function App() {
+  const inputRef = useRef();
+  const [name, setName] = useState('World');
+
   return (
     <div className={styles.app}>
-      <Text>Hello, World!</Text>
-      <TextInput placeholder="Please input..." />
-    <div>
+      <Text>{fmt('Hello, ', name, '!')}</Text>
+      <TextInput ref={inputRef} placeholder="Please input..." />
+      <Button onClick={() => setName(inputRef.current.value)}>Change</Button>
+    </div>
   );
 }
 ```
