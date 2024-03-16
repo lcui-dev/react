@@ -1,8 +1,8 @@
 import React, { ReactNode, cloneElement, isValidElement } from "react";
 
-type Value = string | number | boolean | object | null | ObjectBinding;
+export type Value = string | number | boolean | object | null | ObjectBinding;
 
-enum SyntaxKind {
+export enum SyntaxKind {
   Unknown,
   StringLiteral,
   NumericLiteral,
@@ -10,9 +10,10 @@ enum SyntaxKind {
   NewExpression,
 }
 
-enum CType {
+export enum CType {
   Unknown,
   Int,
+  Boolean,
   Size,
   Double,
   String,
@@ -55,24 +56,25 @@ type InitializerExpression =
 
 interface VariableDeclaration {
   identifier: string;
-  initializer?: InitializerExpression;
+  initializer: ObjectBinding;
 }
 
 interface FunctionContext {
   kind: string;
+  name: string;
   locals: VariableDeclaration[];
   body: string[];
+  hasStateOperation: boolean;
 }
 
 interface EventHandlerDeclaration {
   eventName: string;
-  name: string;
+  handler: Function;
   context: FunctionContext;
 }
 
 interface ComponentContext extends FunctionContext {
   kind: "ComponentContext";
-  name: string;
   state: VariableDeclaration[];
   stateNames: string[];
   eventHandlers: EventHandlerDeclaration[];
@@ -106,15 +108,10 @@ interface BindingBase<T = BindingMeta> {
   new (...arg: Value[]): Binding;
 }
 
-type Binding<T = BindingMeta> = BindingBase<T> & { [key: string]: Binding };
-type ObjectBinding = Binding<ObjectBindingMeta>;
-
-interface CPrototype {
-  create(...args: Value[]);
-  duplicate(obj: ObjectBinding): VariableDeclaration;
-  toString(obj: ObjectBinding): VariableDeclaration;
-  destroy(obj: ObjectBinding): void;
-}
+export type Binding<T = BindingMeta> = BindingBase<T> & {
+  [key: string]: Binding;
+};
+export type ObjectBinding = Binding<ObjectBindingMeta>;
 
 const typeNameMap = {
   [CType.Double]: "double",
@@ -123,7 +120,7 @@ const typeNameMap = {
   [CType.String]: "char*",
 };
 
-function getObjectTypeName(obj: ObjectBinding) {
+export function getObjectTypeName(obj: ObjectBinding) {
   const init = obj.__meta__.initializer;
   const typeName = typeNameMap[obj.__meta__.type];
 
@@ -149,24 +146,24 @@ function getObjectTypeName(obj: ObjectBinding) {
   return "unknown";
 }
 
-function getTypeName(value: Value) {
+export function getTypeName(value: Value) {
   if (isObjectBinding(value)) {
     return getObjectTypeName(value);
   }
   return typeof value;
 }
 
-function toClassName(typeName: string) {
+export function toClassName(typeName: string) {
   return typeName.endsWith("_t")
     ? typeName.substring(0, typeName.length - 1)
     : typeName;
 }
 
-function getInitializerName(typeName: string) {
+export function getInitializerName(typeName: string) {
   return `${toClassName(typeName)}_create`;
 }
 
-function getDestroyerName(typeName: string) {
+export function getDestroyerName(typeName: string) {
   return `${toClassName(typeName)}_destroy`;
 }
 
@@ -175,7 +172,7 @@ function resolveBindingIdentify(b: ObjectBinding) {
   return b.__meta__.name || "unnamed_obj";
 }
 
-function createCallExpression(identifier: string, args: Value[]) {
+function compileCallExpression(identifier: string, args: Value[]) {
   const argsStr = args
     .map((arg) => {
       switch (typeof arg) {
@@ -202,14 +199,18 @@ function createCallExpression(identifier: string, args: Value[]) {
   return `${identifier}(${argsStr})`;
 }
 
-function createStringBinding(value: string | null = null) {
-  const ctx = getFunctionContext();
-  const identifier = `str_${ctx.locals.length}`;
-  const binding = createObjectBinding({
-    name: identifier,
+export function createStringBinding(name: string, value: string | null = null) {
+  return createObjectBinding({
+    name,
     type: CType.String,
     initializer: createStringLiteral(value),
   });
+}
+
+export function createStringVariable(value: string | null = null) {
+  const ctx = getFunctionContext();
+  const identifier = `str_${ctx.locals.length}`;
+  const binding = createStringBinding(identifier, value);
 
   ctx.locals.push({
     identifier,
@@ -218,7 +219,7 @@ function createStringBinding(value: string | null = null) {
   return binding;
 }
 
-function createTypedObjectBinding(typeName: string, args: Value[] = []) {
+export function createVariable(typeName: string, args: Value[] = []) {
   const ctx = getFunctionContext();
   const identifier = `obj_${ctx.locals.length}`;
   const binding = createObjectBinding({
@@ -235,17 +236,37 @@ function createTypedObjectBinding(typeName: string, args: Value[] = []) {
     identifier,
     initializer: binding,
   });
-  ctx.body.push(
-    `${identifier} = ${createCallExpression(
-      getInitializerName(typeName),
-      args
-    )}`
-  );
   return binding;
 }
 
-function destroyObjectBinding(obj: ObjectBinding) {
-  const ctx = getFunctionContext();
+function compileObjectInitializer(obj: ObjectBinding) {
+  const init = obj.__meta__.initializer;
+
+  if (!init) {
+    throw new SyntaxError("missing initializer");
+  }
+  switch (init.kind) {
+    case SyntaxKind.NumericLiteral:
+    case SyntaxKind.StringLiteral:
+      return init.text;
+    case SyntaxKind.NewExpression:
+      return `${compileCallExpression(
+        getInitializerName(init.identifier),
+        init.arguments
+      )}`;
+    default:
+      break;
+  }
+  return "";
+}
+
+function compileVariableDeclaration(decl: VariableDeclaration) {
+  return `${getObjectTypeName(decl.initializer)} ${
+    decl.identifier
+  } = ${compileObjectInitializer(decl.initializer)}`;
+}
+
+export function compileObjectDestroyer(obj: ObjectBinding) {
   const init = obj.__meta__.initializer;
 
   if (!init) {
@@ -256,29 +277,41 @@ function destroyObjectBinding(obj: ObjectBinding) {
     case SyntaxKind.StringLiteral:
       break;
     case SyntaxKind.NewExpression:
-      ctx.body.push(`${getDestroyerName(init.identifier)}(${obj.name})`);
-      break;
+      return `${getDestroyerName(init.identifier)}(${obj.name})`;
     default:
       break;
   }
+  return "";
 }
 
 let contextList: FunctionContext[] = [];
 
-function getFunctionContext() {
+export function getFunctionContext() {
   if (contextList.length < 2) {
     throw new SyntaxError("FunctionContext is missing");
   }
   return contextList[contextList.length - 1];
 }
 
-function getComponentContext() {
+export function getComponentContext() {
   if (contextList[0]?.kind !== "ComponentContext") {
     throw new SyntaxError(
       "The createState function must be called in a component function"
     );
   }
   return contextList[0] as ComponentContext;
+}
+
+export function pushFunctionComponent(ctx: FunctionContext) {
+  contextList.push(ctx);
+}
+
+export function popFunctionComponent(ctx: FunctionContext) {
+  contextList.push(ctx);
+}
+
+export function setComponentContext(ctx: ComponentContext) {
+  contextList = [ctx];
 }
 
 function createNumericLiteral(num: number, type: CNumericType): NumericLiteral {
@@ -321,7 +354,7 @@ function createBinding(meta: BindingMeta) {
         if (!meta.name) {
           throw new SyntaxError("Constructor has no name");
         }
-        return createTypedObjectBinding(meta.name, args);
+        return createVariable(meta.name, args);
       },
       apply(target: Binding, _thisArg, args) {
         if (target.__meta__.kind === BindingKind.Module) {
@@ -329,7 +362,7 @@ function createBinding(meta: BindingMeta) {
         }
         const ctx = getFunctionContext();
         ctx.body.push(
-          createCallExpression(
+          compileCallExpression(
             resolveBindingIdentify(target as ObjectBinding),
             args
           )
@@ -340,11 +373,11 @@ function createBinding(meta: BindingMeta) {
   return binding;
 }
 
-function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">) {
+export function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">) {
   return createBinding({ ...meta, kind: BindingKind.Object }) as ObjectBinding;
 }
 
-function isObjectBinding(val: any): val is ObjectBinding {
+export function isObjectBinding(val: any): val is ObjectBinding {
   return typeof val === "object" && "__meta__" in val;
 }
 
@@ -355,7 +388,7 @@ function stringifyBinding(obj: ObjectBinding) {
       return obj;
     case CType.Object: {
       const typeName = getObjectTypeName(obj);
-      const str = createStringBinding();
+      const str = createStringVariable();
       ctx.body.push(
         `${str.__meta__.name} = ${toClassName(typeName)}_to_string(${
           obj.__meta__.name
@@ -363,7 +396,7 @@ function stringifyBinding(obj: ObjectBinding) {
       );
     }
     case CType.Double: {
-      const str = createStringBinding();
+      const str = createStringVariable();
       ctx.body.push(
         `${str.__meta__.name} = malloc(sizeof(char) * 32)`,
         `snprintf(${str.__meta__.name}, 31, "%lf", ${obj.__meta__.name})`,
@@ -372,7 +405,7 @@ function stringifyBinding(obj: ObjectBinding) {
       return str;
     }
     case CType.Int: {
-      const str = createStringBinding();
+      const str = createStringVariable();
       ctx.body.push(
         `${str.__meta__.name} = malloc(sizeof(char) * 32)`,
         `snprintf(${str.__meta__.name}, 31, "%d", ${obj.__meta__.name})`,
@@ -381,7 +414,7 @@ function stringifyBinding(obj: ObjectBinding) {
       return str;
     }
     case CType.Size: {
-      const str = createStringBinding();
+      const str = createStringVariable();
       ctx.body.push(
         `${str.__meta__.name} = malloc(sizeof(char) * 32)`,
         `snprintf(${str.__meta__.name}, 31, "%zu", ${obj.__meta__.name})`,
@@ -397,18 +430,18 @@ function stringifyBinding(obj: ObjectBinding) {
   );
 }
 
-function stringifyValue(value: Value) {
+export function stringifyValue(value: Value) {
   switch (typeof value) {
     case "string":
-      return createStringBinding(value);
+      return createStringVariable(value);
     case "boolean":
     case "number":
-      return createStringBinding(`${value}`);
+      return createStringVariable(`${value}`);
     case "undefined":
-      return createStringBinding("undefined");
+      return createStringVariable("undefined");
     case "object":
       if (value === null) {
-        return createStringBinding();
+        return createStringVariable();
       }
       if (isObjectBinding(value)) {
         return stringifyBinding(value);
@@ -419,16 +452,28 @@ function stringifyValue(value: Value) {
   throw SyntaxError(`Unable to convert ${typeof value} to a string`);
 }
 
-function isNumericType(t: CType): t is CNumericType {
+export function isNumericType(t: CType): t is CNumericType {
   return cNumericTypes.includes(t as CNumericType);
+}
+
+export function isNumeric(obj: ObjectBinding) {
+  return isNumericType(obj.__meta__.type);
+}
+
+export function isString(obj: ObjectBinding) {
+  return obj.__meta__.type === CType.String;
 }
 
 function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
   const ctx = getFunctionContext();
+
+  ctx.hasStateOperation = true;
   if (obj.__meta__.type === CType.String) {
     const str = stringifyValue(newValue);
-    destroyObjectBinding(obj);
-    ctx.body.push(`${obj.__meta__.name} = ${str.__meta__.name}`);
+    ctx.body.push(
+      compileObjectDestroyer(obj),
+      `${obj.__meta__.name} = ${str.__meta__.name}`
+    );
     return;
   }
   if (isNumericType(obj.__meta__.type)) {
@@ -464,83 +509,51 @@ function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
   );
 }
 
-export function fmt(...args: Value[]) {
-  const ctx = getFunctionContext();
-  const str = createStringBinding();
-  const len = createObjectBinding({
-    name: `${str.__meta__.name}_len`,
+export function createBooleanBinding(name: string) {
+  return createObjectBinding({ name, type: CType.Boolean });
+}
+
+export function createNumericBinding(
+  name: string,
+  value: number,
+  type: CNumericType = CType.Int
+) {
+  return createObjectBinding({
+    name,
     type: CType.Size,
-    initializer: createNumericLiteral(8, CType.Size),
+    initializer: createNumericLiteral(value, type),
   });
-  const list = args.map((value) => stringifyValue(value));
-
-  ctx.locals.push({
-    identifier: len.__meta__.name,
-    initializer: len,
-  });
-  ctx.body.push(...list.map((id) => `${len.__meta__.name} += strlen(${id})`));
-  ctx.body.push(
-    `${str.__meta__.name} = malloc(sizeof(char) * ${len.__meta__.name})`
-  );
-  ctx.body.push(
-    ...list.map(
-      (id, index) =>
-        `${index === 0 ? `strcpy` : `strcat`}(${str.__meta__.name}, ${id})`
-    )
-  );
-  return str;
 }
 
-export function useState(initialValue: Value) {
-  let value: ObjectBinding;
-  const ctx = getComponentContext();
-  const stateName =
-    ctx.stateNames[ctx.state.length] || `unnamed_state_${ctx.state.length}`;
-  const stateCName = `_that->${stateName}`;
-  const typeName = typeNameMap[typeof initialValue];
-
-  if (isObjectBinding(initialValue)) {
-    value = initialValue;
-    ctx.locals = ctx.locals.filter(
-      (local) => local.initializer !== initialValue
-    );
-    ctx.body = ctx.body.filter((line) => !line.startsWith(value.__meta__.name));
-    value.__meta__.name = stateCName;
-  } else if (typeName) {
-    value = createObjectBinding({ name: stateCName, type: typeName });
-  } else {
-    throw new SyntaxError(`Unsupported type: ${typeName}`);
-  }
-  ctx.state.push({ identifier: stateName, initializer: value });
-  return [
-    value,
-    (newValue: Value) => setObjectBindingValue(value, newValue),
-  ] as const;
-}
-
-function createFunctionContext(): FunctionContext {
+function createFunctionContext(name: string): FunctionContext {
   return {
     kind: "FunctionContext",
+    name,
+    hasStateOperation: false,
     locals: [],
     body: [],
   };
 }
 
-function createEventHandler(eventName: string, func: Function) {
+function transformEventHandler(eventName: string, handler: Function) {
   const ctx = getComponentContext();
-  const handler: EventHandlerDeclaration = {
-    name: `${ctx.name}_${
-      func.name || `${eventName}_handler_${ctx.eventHandlers.length}`
-    }`,
+  let decl = ctx.eventHandlers.find((item) => item.handler == handler);
+  if (decl) {
+    return decl.context.name;
+  }
+
+  const name =
+    handler.name || `${eventName}_handler_${ctx.eventHandlers.length}`;
+  decl = {
     eventName,
-    context: createFunctionContext(),
+    handler,
+    context: createFunctionContext(name),
   };
-  // TODO: 生成事件处理代码
-  ctx.eventHandlers.push(handler);
-  contextList.push(handler.context);
-  func();
+  ctx.eventHandlers.push(decl);
+  contextList.push(decl.context);
+  handler();
   contextList.pop();
-  return;
+  return name;
 }
 
 function transformNode(node: ReactNode) {
@@ -552,7 +565,10 @@ function transformNode(node: ReactNode) {
     Object.keys(node.props).reduce((props, key) => {
       let value = node.props[key];
       if (key.startsWith("on")) {
-        value = createEventHandler(key.substring(2).toLocaleLowerCase(), value);
+        value = transformEventHandler(
+          key.substring(2).toLocaleLowerCase(),
+          value
+        );
       }
       // TODO: 处理 ref
       // TODO: 处理 style 属性的数据绑定
@@ -561,11 +577,115 @@ function transformNode(node: ReactNode) {
   );
 }
 
+function compileFunction(
+  ctx: FunctionContext,
+  signature: string,
+  body: string
+) {
+  return [
+    signature,
+    "{",
+    ctx.locals.map((item) => `${compileVariableDeclaration(item)};`),
+    body,
+    ctx.locals.map((item) => `${compileObjectDestroyer(item.initializer)};`),
+    "]",
+  ].join("\n");
+}
+
+function compileComponentMethod(
+  ctx: ComponentContext,
+  name: string,
+  args = "",
+  body = ""
+) {
+  return compileFunction(
+    ctx,
+    `static void ${ctx.name}_${name}(ui_widget_t *w${args})`,
+    [
+      `${ctx.name}_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
+      body,
+      ctx.hasStateOperation && `${ctx.name}_update(w);`,
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+}
+
+function compileComponentState(ctx: ComponentContext) {
+  return [
+    "typedef struct {",
+    ...ctx.state.map(
+      (item) => `${getObjectTypeName(item.initializer)} ${item.identifier};`
+    ),
+    `} ${ctx.name}_state_t;`,
+    compileComponentMethod(
+      ctx,
+      "init_state",
+      "",
+      ctx.state
+        .map(
+          (item) =>
+            `${item.initializer.__meta__.name} = ${compileObjectInitializer(
+              item.initializer
+            )}`
+        )
+        .filter((line) => line.length > 0)
+        .join("\n")
+    ),
+    compileComponentMethod(
+      ctx,
+      "destroy_state",
+      "",
+      ctx.state
+        .map((item) => compileObjectDestroyer(item.initializer))
+        .filter((line) => line.length > 0)
+        .join("\b")
+    ),
+  ].join("\n\n");
+}
+function compileComponentEventHandlers(ctx: ComponentContext) {
+  return [
+    ...ctx.eventHandlers.map((item) =>
+      compileComponentMethod(
+        ctx,
+        item.handler.name,
+        ", ui_event_t *e, void *arg",
+        item.context.body.join(";\n")
+      )
+    ),
+    compileComponentMethod(
+      ctx,
+      "init_event_handlers",
+      "",
+      ctx.eventHandlers
+        .map(
+          (item) => `ui_widget_on(w, "${item.eventName}", ${item.context.name})`
+        )
+        .join(";\n")
+    ),
+  ].join("\n\n");
+}
+
+function compileComponentMethods(ctx: ComponentContext) {
+  return [
+    `static void ${ctx.name}_init_base(ui_widget_t *w)`,
+    "{",
+    `${ctx.name}_init_state(w);`,
+    `${ctx.name}_init_event_handlers(w);`,
+    `${ctx.name}_update(w);`,
+    "}\n",
+    `static void ${ctx.name}_destroy_base(ui_widget_t *w)`,
+    "{",
+    `${ctx.name}_destroy_state(w);`,
+    "}\n",
+    compileComponentMethod(ctx, "update"),
+  ].join("\n");
+}
+
 export function createComponent<T = {}>(componentFunc: React.FC<T>) {
-  return (props: T) => {
+  const newFunc = (props: T) => {
     const ctx: ComponentContext = {
-      ...createFunctionContext(),
-      name: componentFunc.name,
+      ...createFunctionContext(componentFunc.name),
       kind: "ComponentContext",
       state: [],
       eventHandlers: [],
@@ -591,6 +711,13 @@ export function createComponent<T = {}>(componentFunc: React.FC<T>) {
     };
 
     contextList = [ctx];
-    return transformNode(componentFunc(props));
+    const root = transformNode(componentFunc(props));
+    compileComponentState(ctx);
+    compileComponentEventHandlers(ctx);
+    compileComponentMethods(ctx);
+    // TODO: 生成 refs 结构体定义
+    return root;
   };
+  newFunc.name = componentFunc;
+  return newFunc;
 }
