@@ -1,9 +1,11 @@
 /// <reference path="../types.d.ts" />
 
 import React, { createElement, Fragment } from "react";
+
+export * from './binding';
 export { default as fmt } from "./fmt";
 export { default as useState } from "./useState";
-export * from './binding';
+export { default as transform } from "./transform";
 
 export interface WidgetBaseProps {
   $ref?: string;

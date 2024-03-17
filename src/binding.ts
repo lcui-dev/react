@@ -1,4 +1,9 @@
-import React, { ReactNode, cloneElement, isValidElement } from "react";
+import React, {
+  ReactElement,
+  ReactNode,
+  cloneElement,
+  isValidElement,
+} from "react";
 
 export type Value = string | number | boolean | object | null | ObjectBinding;
 
@@ -59,7 +64,7 @@ interface VariableDeclaration {
   initializer: ObjectBinding;
 }
 
-interface FunctionContext {
+export interface FunctionContext {
   kind: string;
   name: string;
   locals: VariableDeclaration[];
@@ -73,12 +78,12 @@ interface EventHandlerDeclaration {
   context: FunctionContext;
 }
 
-interface ComponentContext extends FunctionContext {
+export interface ComponentContext extends FunctionContext {
   kind: "ComponentContext";
   state: VariableDeclaration[];
   stateNames: string[];
   eventHandlers: EventHandlerDeclaration[];
-  refs: any[];
+  refs: string[];
 }
 
 enum BindingKind {
@@ -207,9 +212,12 @@ export function createStringBinding(name: string, value: string | null = null) {
   });
 }
 
-export function createStringVariable(value: string | null = null) {
+function createStringVariable(
+  name: null | string = null,
+  value: string | null = null
+) {
   const ctx = getFunctionContext();
-  const identifier = `str_${ctx.locals.length}`;
+  const identifier = name || `str_${ctx.locals.length}`;
   const binding = createStringBinding(identifier, value);
 
   ctx.locals.push({
@@ -219,7 +227,23 @@ export function createStringVariable(value: string | null = null) {
   return binding;
 }
 
-export function createVariable(typeName: string, args: Value[] = []) {
+function createNumericVariable(
+  name: null | string = null,
+  value: number = 0,
+  type: CNumericType = CType.Int
+) {
+  const ctx = getFunctionContext();
+  const identifier = name || `num_${ctx.locals.length}`;
+  const binding = createNumericBinding(identifier, value, type);
+
+  ctx.locals.push({
+    identifier,
+    initializer: binding,
+  });
+  return binding;
+}
+
+function createVariable(typeName: string, args: Value[] = []) {
   const ctx = getFunctionContext();
   const identifier = `obj_${ctx.locals.length}`;
   const binding = createObjectBinding({
@@ -266,7 +290,7 @@ function compileVariableDeclaration(decl: VariableDeclaration) {
   } = ${compileObjectInitializer(decl.initializer)}`;
 }
 
-export function compileObjectDestroyer(obj: ObjectBinding) {
+function compileObjectDestroyer(obj: ObjectBinding) {
   const init = obj.__meta__.initializer;
 
   if (!init) {
@@ -282,6 +306,113 @@ export function compileObjectDestroyer(obj: ObjectBinding) {
       break;
   }
   return "";
+}
+
+function compileFunction(
+  ctx: FunctionContext,
+  signature: string,
+  body: string
+) {
+  return [
+    signature,
+    "{",
+    ctx.locals.map((item) => `${compiler.compileVariableDeclaration(item)};`),
+    body,
+    ctx.locals.map(
+      (item) => `${compiler.compileObjectDestroyer(item.initializer)};`
+    ),
+    "]",
+  ].join("\n");
+}
+
+function compileComponentMethod(
+  ctx: ComponentContext,
+  name: string,
+  args = "",
+  body = ""
+) {
+  return compileFunction(
+    ctx,
+    `static void ${ctx.name}_${name}(ui_widget_t *w${args})`,
+    [
+      `${ctx.name}_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
+      body,
+      ctx.hasStateOperation && `${ctx.name}_update(w);`,
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+}
+
+function compileComponentState(ctx: ComponentContext) {
+  return [
+    "typedef struct {",
+    ...ctx.state.map(
+      (item) => `${getObjectTypeName(item.initializer)} ${item.identifier};`
+    ),
+    `} ${ctx.name}_state_t;`,
+    compileComponentMethod(
+      ctx,
+      "init_state",
+      "",
+      ctx.state
+        .map(
+          (item) =>
+            `${
+              item.initializer.__meta__.name
+            } = ${compiler.compileObjectInitializer(item.initializer)}`
+        )
+        .filter((line) => line.length > 0)
+        .join("\n")
+    ),
+    compileComponentMethod(
+      ctx,
+      "destroy_state",
+      "",
+      ctx.state
+        .map((item) => compiler.compileObjectDestroyer(item.initializer))
+        .filter((line) => line.length > 0)
+        .join("\b")
+    ),
+  ].join("\n\n");
+}
+function compileComponentEventHandlers(ctx: ComponentContext) {
+  return [
+    ...ctx.eventHandlers.map((item) =>
+      compileComponentMethod(
+        ctx,
+        item.handler.name,
+        ", ui_event_t *e, void *arg",
+        item.context.body.join(";\n")
+      )
+    ),
+    compileComponentMethod(
+      ctx,
+      "init_event_handlers",
+      "",
+      ctx.eventHandlers
+        .map(
+          (item) => `ui_widget_on(w, "${item.eventName}", ${item.context.name})`
+        )
+        .join(";\n")
+    ),
+  ].join("\n\n");
+}
+
+function compileComponentMethods(ctx: ComponentContext) {
+  return [
+    `static void ${ctx.name}_init_base(ui_widget_t *w)`,
+    "{",
+    `${ctx.name}_init_state(w);`,
+    `${ctx.name}_init_event_handlers(w);`,
+    `${ctx.name}_update(w);`,
+    "}\n",
+    `static void ${ctx.name}_destroy_base(ui_widget_t *w)`,
+    "{",
+    `${ctx.name}_destroy_state(w);`,
+    "}\n",
+    compileComponentMethod(ctx, "update"),
+  ].join("\n");
 }
 
 let contextList: FunctionContext[] = [];
@@ -373,7 +504,7 @@ function createBinding(meta: BindingMeta) {
   return binding;
 }
 
-export function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">) {
+function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">) {
   return createBinding({ ...meta, kind: BindingKind.Object }) as ObjectBinding;
 }
 
@@ -464,56 +595,11 @@ export function isString(obj: ObjectBinding) {
   return obj.__meta__.type === CType.String;
 }
 
-function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
-  const ctx = getFunctionContext();
-
-  ctx.hasStateOperation = true;
-  if (obj.__meta__.type === CType.String) {
-    const str = stringifyValue(newValue);
-    ctx.body.push(
-      compileObjectDestroyer(obj),
-      `${obj.__meta__.name} = ${str.__meta__.name}`
-    );
-    return;
-  }
-  if (isNumericType(obj.__meta__.type)) {
-    let right: string;
-    const typeName = typeNameMap[obj.__meta__.type];
-
-    switch (typeof newValue) {
-      case "boolean":
-        right = newValue ? "1" : "0";
-        break;
-      case "number":
-        right = `${newValue}`;
-        break;
-      case "object":
-        if (newValue === null) {
-          right = "0";
-          break;
-        }
-        if (isObjectBinding(newValue)) {
-          right = newValue.__meta__.name;
-          break;
-        }
-      default:
-        throw SyntaxError(`Unable to convert ${typeof newValue} to int`);
-    }
-    ctx.body.push(`${obj.__meta__.name} = ${typeName}${right}`);
-    return;
-  }
-  throw new SyntaxError(
-    `Cannot assign value because type ${getTypeName(
-      newValue
-    )} is incompatible with type ${getTypeName(obj)}`
-  );
-}
-
-export function createBooleanBinding(name: string) {
+function createBooleanBinding(name: string) {
   return createObjectBinding({ name, type: CType.Boolean });
 }
 
-export function createNumericBinding(
+function createNumericBinding(
   name: string,
   value: number,
   type: CNumericType = CType.Int
@@ -525,7 +611,7 @@ export function createNumericBinding(
   });
 }
 
-function createFunctionContext(name: string): FunctionContext {
+export function createFunctionContext(name: string): FunctionContext {
   return {
     kind: "FunctionContext",
     name,
@@ -535,189 +621,29 @@ function createFunctionContext(name: string): FunctionContext {
   };
 }
 
-function transformEventHandler(eventName: string, handler: Function) {
-  const ctx = getComponentContext();
-  let decl = ctx.eventHandlers.find((item) => item.handler == handler);
-  if (decl) {
-    return decl.context.name;
-  }
-
-  const name =
-    handler.name || `${eventName}_handler_${ctx.eventHandlers.length}`;
-  decl = {
-    eventName,
-    handler,
-    context: createFunctionContext(name),
-  };
-  ctx.eventHandlers.push(decl);
-  contextList.push(decl.context);
-  handler();
+export function call(func: Function, ctx: FunctionContext) {
+  contextList.push(ctx);
+  func();
   contextList.pop();
-  return name;
 }
 
-function transformNode(node: ReactNode) {
-  if (!isValidElement(node)) {
-    return node;
-  }
-  return cloneElement(
-    node,
-    Object.keys(node.props).reduce((props, key) => {
-      let value = node.props[key];
-      if (key.startsWith("on")) {
-        value = transformEventHandler(
-          key.substring(2).toLocaleLowerCase(),
-          value
-        );
-      }
-      // TODO: 处理 ref
-      // TODO: 处理 style 属性的数据绑定
-      return { ...props, [key]: value };
-    }, {})
-  );
-}
+export const compiler = {
+  compileVariableDeclaration,
+  compileObjectInitializer,
+  compileObjectDestroyer,
+  compileFunction,
+  compileComponentState,
+  compileComponentMethods,
+  compileComponentEventHandlers,
+  compileComponentMethod,
+};
 
-function compileFunction(
-  ctx: FunctionContext,
-  signature: string,
-  body: string
-) {
-  return [
-    signature,
-    "{",
-    ctx.locals.map((item) => `${compileVariableDeclaration(item)};`),
-    body,
-    ctx.locals.map((item) => `${compileObjectDestroyer(item.initializer)};`),
-    "]",
-  ].join("\n");
-}
-
-function compileComponentMethod(
-  ctx: ComponentContext,
-  name: string,
-  args = "",
-  body = ""
-) {
-  return compileFunction(
-    ctx,
-    `static void ${ctx.name}_${name}(ui_widget_t *w${args})`,
-    [
-      `${ctx.name}_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
-      body,
-      ctx.hasStateOperation && `${ctx.name}_update(w);`,
-    ]
-      .filter(Boolean)
-      .join("\n")
-  );
-}
-
-function compileComponentState(ctx: ComponentContext) {
-  return [
-    "typedef struct {",
-    ...ctx.state.map(
-      (item) => `${getObjectTypeName(item.initializer)} ${item.identifier};`
-    ),
-    `} ${ctx.name}_state_t;`,
-    compileComponentMethod(
-      ctx,
-      "init_state",
-      "",
-      ctx.state
-        .map(
-          (item) =>
-            `${item.initializer.__meta__.name} = ${compileObjectInitializer(
-              item.initializer
-            )}`
-        )
-        .filter((line) => line.length > 0)
-        .join("\n")
-    ),
-    compileComponentMethod(
-      ctx,
-      "destroy_state",
-      "",
-      ctx.state
-        .map((item) => compileObjectDestroyer(item.initializer))
-        .filter((line) => line.length > 0)
-        .join("\b")
-    ),
-  ].join("\n\n");
-}
-function compileComponentEventHandlers(ctx: ComponentContext) {
-  return [
-    ...ctx.eventHandlers.map((item) =>
-      compileComponentMethod(
-        ctx,
-        item.handler.name,
-        ", ui_event_t *e, void *arg",
-        item.context.body.join(";\n")
-      )
-    ),
-    compileComponentMethod(
-      ctx,
-      "init_event_handlers",
-      "",
-      ctx.eventHandlers
-        .map(
-          (item) => `ui_widget_on(w, "${item.eventName}", ${item.context.name})`
-        )
-        .join(";\n")
-    ),
-  ].join("\n\n");
-}
-
-function compileComponentMethods(ctx: ComponentContext) {
-  return [
-    `static void ${ctx.name}_init_base(ui_widget_t *w)`,
-    "{",
-    `${ctx.name}_init_state(w);`,
-    `${ctx.name}_init_event_handlers(w);`,
-    `${ctx.name}_update(w);`,
-    "}\n",
-    `static void ${ctx.name}_destroy_base(ui_widget_t *w)`,
-    "{",
-    `${ctx.name}_destroy_state(w);`,
-    "}\n",
-    compileComponentMethod(ctx, "update"),
-  ].join("\n");
-}
-
-export function createComponent<T = {}>(componentFunc: React.FC<T>) {
-  const newFunc = (props: T) => {
-    const ctx: ComponentContext = {
-      ...createFunctionContext(componentFunc.name),
-      kind: "ComponentContext",
-      state: [],
-      eventHandlers: [],
-      stateNames: `${componentFunc}`
-        .split(/\r|\n/)
-        .filter((line) => line.includes("useState"))
-        .map((line) => {
-          const index = line.indexOf("useState");
-          if (index < 0) {
-            return "";
-          }
-          const decl = line
-            .substring(0, index)
-            .replace(/(const|let|var)\s/, "")
-            .trim();
-          const bracketLeft = decl.indexOf("[");
-          if (bracketLeft >= 0) {
-            return decl.substring(bracketLeft + 1).split(/\]|,/)[0];
-          }
-          return decl;
-        }),
-      refs: [],
-    };
-
-    contextList = [ctx];
-    const root = transformNode(componentFunc(props));
-    compileComponentState(ctx);
-    compileComponentEventHandlers(ctx);
-    compileComponentMethods(ctx);
-    // TODO: 生成 refs 结构体定义
-    return root;
-  };
-  newFunc.name = componentFunc;
-  return newFunc;
-}
+export const factory = {
+  createObjectBinding,
+  createStringBinding,
+  createBooleanBinding,
+  createNumericBinding,
+  createNumericVariable,
+  createStringVariable,
+  createVariable,
+};

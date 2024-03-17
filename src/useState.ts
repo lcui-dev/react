@@ -2,17 +2,15 @@ import {
   CType,
   ObjectBinding,
   Value,
-  createNumericBinding,
-  createObjectBinding,
-  createStringBinding,
   getTypeName,
   isNumeric,
   isObjectBinding,
   isString,
-  compileObjectDestroyer,
   stringifyValue,
   getComponentContext,
   getFunctionContext,
+  factory,
+  compiler,
 } from "./binding";
 
 function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
@@ -22,7 +20,7 @@ function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
   if (isString(obj)) {
     const str = stringifyValue(newValue);
     ctx.body.push(
-      compileObjectDestroyer(obj),
+      compiler.compileObjectDestroyer(obj),
       `${obj.__meta__.name} = ${str.__meta__.name}`
     );
     return;
@@ -76,13 +74,13 @@ export default function useState(initialValue: Value) {
   } else {
     switch (typeof initialValue) {
       case "boolean":
-        value = createObjectBinding({ name: stateCName, type: CType.Boolean });
+        value = factory.createObjectBinding({ name: stateCName, type: CType.Boolean });
         break;
       case "string":
-        value = createStringBinding(stateCName, initialValue);
+        value = factory.createStringBinding(stateCName, initialValue);
         break;
       case "number":
-        value = createNumericBinding(stateCName, initialValue);
+        value = factory.createNumericBinding(stateCName, initialValue);
         break;
       default:
         throw new SyntaxError(`Unsupported type: ${typeof initialValue}`);
