@@ -1,10 +1,3 @@
-import React, {
-  ReactElement,
-  ReactNode,
-  cloneElement,
-  isValidElement,
-} from "react";
-
 export type Value = string | number | boolean | object | null | ObjectBinding;
 
 export enum SyntaxKind {
@@ -74,6 +67,7 @@ export interface FunctionContext {
 
 interface EventHandlerDeclaration {
   eventName: string;
+  target: string;
   handler: Function;
   context: FunctionContext;
 }
@@ -212,12 +206,9 @@ export function createStringBinding(name: string, value: string | null = null) {
   });
 }
 
-function createStringVariable(
-  name: null | string = null,
-  value: string | null = null
-) {
+function createStringVariable(value: string | null = null) {
   const ctx = getFunctionContext();
-  const identifier = name || `str_${ctx.locals.length}`;
+  const identifier = `str_${ctx.locals.length}`;
   const binding = createStringBinding(identifier, value);
 
   ctx.locals.push({
@@ -270,8 +261,9 @@ function compileObjectInitializer(obj: ObjectBinding) {
     throw new SyntaxError("missing initializer");
   }
   switch (init.kind) {
-    case SyntaxKind.NumericLiteral:
     case SyntaxKind.StringLiteral:
+      return `strdup(${init.text})`;
+    case SyntaxKind.NumericLiteral:
       return init.text;
     case SyntaxKind.NewExpression:
       return `${compileCallExpression(
@@ -297,122 +289,158 @@ function compileObjectDestroyer(obj: ObjectBinding) {
     throw new SyntaxError("missing initializer");
   }
   switch (init.kind) {
-    case SyntaxKind.NumericLiteral:
     case SyntaxKind.StringLiteral:
+      return `free(${obj.__meta__.name})`;
+    case SyntaxKind.NumericLiteral:
       break;
     case SyntaxKind.NewExpression:
-      return `${getDestroyerName(init.identifier)}(${obj.name})`;
+      return `${getDestroyerName(init.identifier)}(${obj.__meta__.name})`;
     default:
       break;
   }
   return "";
 }
 
-function compileFunction(
-  ctx: FunctionContext,
-  signature: string,
-  body: string
-) {
+function formatFuncBody(body: string[]) {
+  return body
+    .filter(Boolean)
+    .map((line) => `        ${line};`)
+    .join("\n");
+}
+
+function compileFunction({
+  locals,
+  signature,
+  body,
+}: {
+  locals: VariableDeclaration[];
+  signature: string;
+  body: string[];
+}) {
+  const indent = " ".repeat(8);
   return [
     signature,
     "{",
-    ctx.locals.map((item) => `${compiler.compileVariableDeclaration(item)};`),
-    body,
-    ctx.locals.map(
-      (item) => `${compiler.compileObjectDestroyer(item.initializer)};`
+    formatFuncBody(
+      locals.map((item) => compiler.compileVariableDeclaration(item))
     ),
-    "]",
-  ].join("\n");
+    formatFuncBody(body),
+    formatFuncBody(
+      locals.map((item) => compiler.compileObjectDestroyer(item.initializer))
+    ),
+    "}",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
-function compileComponentMethod(
-  ctx: ComponentContext,
-  name: string,
+function compileComponentMethod({
+  ctx,
+  name,
   args = "",
-  body = ""
-) {
-  return compileFunction(
-    ctx,
-    `static void ${ctx.name}_${name}(ui_widget_t *w${args})`,
-    [
-      `${ctx.name}_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
-      body,
-      ctx.hasStateOperation && `${ctx.name}_update(w);`,
-    ]
-      .filter(Boolean)
-      .join("\n")
-  );
+  body = ctx.body,
+  thatId = "w",
+}: {
+  ctx?: FunctionContext;
+  thatId?: string;
+  args?: string;
+  name?: string;
+  body?: string[];
+}) {
+  const className = getComponentContext().name;
+  return compileFunction({
+    locals: ctx?.locals || [],
+    signature: `static void ${className}_${
+      name || ctx?.name || "unnamed_func"
+    }(ui_widget_t *w${args})`,
+    body: [
+      `${className}_react_t *_that = ui_widget_get_data(${thatId}, ${className}_proto)`,
+      ...(body || []),
+      ctx?.hasStateOperation && `${className}_react_update(w)`,
+    ],
+  });
 }
 
 function compileComponentState(ctx: ComponentContext) {
   return [
-    "typedef struct {",
-    ...ctx.state.map(
-      (item) => `${getObjectTypeName(item.initializer)} ${item.identifier};`
-    ),
-    `} ${ctx.name}_state_t;`,
-    compileComponentMethod(
-      ctx,
-      "init_state",
-      "",
-      ctx.state
-        .map(
-          (item) =>
-            `${
-              item.initializer.__meta__.name
-            } = ${compiler.compileObjectInitializer(item.initializer)}`
-        )
-        .filter((line) => line.length > 0)
-        .join("\n")
-    ),
-    compileComponentMethod(
-      ctx,
-      "destroy_state",
-      "",
-      ctx.state
-        .map((item) => compiler.compileObjectDestroyer(item.initializer))
-        .filter((line) => line.length > 0)
-        .join("\b")
-    ),
-  ].join("\n\n");
+    compileComponentMethod({
+      name: "react_init_state",
+      body: ctx.state.map(
+        (item) =>
+          `${
+            item.initializer.__meta__.name
+          } = ${compiler.compileObjectInitializer(item.initializer)}`
+      ),
+    }),
+    "",
+    compileComponentMethod({
+      name: "react_destroy_state",
+      body: ctx.state.map((item) =>
+        compiler.compileObjectDestroyer(item.initializer)
+      ),
+    }),
+  ].join("\n");
 }
+
 function compileComponentEventHandlers(ctx: ComponentContext) {
   return [
     ...ctx.eventHandlers.map((item) =>
-      compileComponentMethod(
-        ctx,
-        item.handler.name,
-        ", ui_event_t *e, void *arg",
-        item.context.body.join(";\n")
-      )
+      compileComponentMethod({
+        ctx: item.context,
+        args: ", ui_event_t *e, void *arg",
+        thatId: "e->data",
+      })
     ),
-    compileComponentMethod(
-      ctx,
-      "init_event_handlers",
-      "",
-      ctx.eventHandlers
-        .map(
-          (item) => `ui_widget_on(w, "${item.eventName}", ${item.context.name})`
-        )
-        .join(";\n")
-    ),
+    compileComponentMethod({
+      name: "react_init_events",
+      body: ctx.eventHandlers.map(
+        (item) =>
+          `ui_widget_on(_that->refs.${item.target}, "${item.eventName}", ${ctx.name}_${item.context.name}, w)`
+      ),
+    }),
   ].join("\n\n");
 }
 
 function compileComponentMethods(ctx: ComponentContext) {
   return [
-    `static void ${ctx.name}_init_base(ui_widget_t *w)`,
+    `static void ${ctx.name}_react_init(ui_widget_t *w)`,
     "{",
-    `${ctx.name}_init_state(w);`,
-    `${ctx.name}_init_event_handlers(w);`,
-    `${ctx.name}_update(w);`,
+    `        ${ctx.name}_react_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
+    `        ${ctx.name}_load_template(w, &_that->refs);`,
+    `        ${ctx.name}_react_init_state(w);`,
+    `        ${ctx.name}_react_init_events(w);`,
+    `        ${ctx.name}_react_update(w);`,
     "}\n",
-    `static void ${ctx.name}_destroy_base(ui_widget_t *w)`,
+    `static void ${ctx.name}_react_destroy(ui_widget_t *w)`,
     "{",
-    `${ctx.name}_destroy_state(w);`,
+    `        ${ctx.name}_react_destroy_state(w);`,
     "}\n",
-    compileComponentMethod(ctx, "update"),
+    compileComponentMethod({ ctx, name: "react_update" }),
   ].join("\n");
+}
+
+function compileTypes(ctx: ComponentContext) {
+  return [
+    "typedef struct {",
+    ...ctx.state.map(
+      (item) =>
+        `        ${getObjectTypeName(item.initializer)} ${item.identifier};`
+    ),
+    `} ${ctx.name}_react_state_t;`,
+    '',
+    'typedef struct {',
+    `        ${ctx.name}_react_state_t state;`,
+    `        ${ctx.name}_refs_t refs;`,
+    `} ${ctx.name}_react_t;`
+  ].join('\n');
+}
+
+function compileComponent(ctx: ComponentContext) {
+  return [
+    compiler.compileComponentState(ctx),
+    compiler.compileComponentEventHandlers(ctx),
+    compiler.compileComponentMethods(ctx),
+  ].join("\n\n");
 }
 
 let contextList: FunctionContext[] = [];
@@ -628,6 +656,7 @@ export function call(func: Function, ctx: FunctionContext) {
 }
 
 export const compiler = {
+  compileTypes,
   compileVariableDeclaration,
   compileObjectInitializer,
   compileObjectDestroyer,
@@ -636,6 +665,7 @@ export const compiler = {
   compileComponentMethods,
   compileComponentEventHandlers,
   compileComponentMethod,
+  compileComponent
 };
 
 export const factory = {

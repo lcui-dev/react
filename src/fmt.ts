@@ -4,7 +4,7 @@ import {
   factory,
   getFunctionContext,
   stringifyValue,
-} from "./binding";
+} from "./binding.js";
 
 export default function fmt(...args: Value[]) {
   const ctx = getFunctionContext();

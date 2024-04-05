@@ -11,7 +11,7 @@ import {
   getFunctionContext,
   factory,
   compiler,
-} from "./binding";
+} from "./binding.js";
 
 function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
   const ctx = getFunctionContext();

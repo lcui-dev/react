@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "es2016",
+    "target": "ESNext",
     "jsx": "react",
-    "module": "ESNext",
+    "module": "NodeNext",
     "declaration": true,
     "outDir": "./lib",
     "esModuleInterop": true,

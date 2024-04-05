@@ -7,17 +7,16 @@ import {
   setComponentContext,
   isObjectBinding,
   compiler,
-} from "./binding";
-import fmt from "./fmt";
+} from "./binding.js";
+import fmt from "./fmt.js";
 
-type Element<T = { $ref?: string }> = ReactElement<
-  T,
-  {
-    displayName?: string;
-    shouldPreRender?: boolean;
-    (props: T): ReactElement;
-  }
->;
+type ComponentFunction<T = {}> = {
+  displayName?: string;
+  shouldPreRender?: boolean;
+  (props: T): ReactElement;
+};
+
+type Element<T = { $ref?: string }> = ReactElement<T, ComponentFunction<T>>;
 
 function isElement(el: ReactElement): el is Element {
   return typeof el.type === "function";
@@ -35,12 +34,17 @@ function createNode(name = "") {
 
 type Node = ReturnType<typeof createNode>;
 
-function transformNodeStyle(node: Node, style: Record<string, any>) {
-  const ctx = getComponentContext();
-  const ref = node.attributes.ref || `ref_${ctx.refs.length}`;
-
+function allocRef(ctx, node, prefix = "ref_") {
+  const ref = node.attributes.ref || `${prefix}${ctx.refs.length}`;
   ctx.refs.push(ref);
   node.attributes.ref = ref;
+  return ref;
+}
+
+function transformNodeStyle(node: Node, style: Record<string, any>) {
+  const ctx = getComponentContext();
+  const ref = allocRef(ctx, node);
+
   Object.keys(style).forEach((key) => {
     const value = style[key];
     const propKey = key.toLocaleLowerCase();
@@ -91,15 +95,15 @@ function transformNodeChildren(node: Node, rawChildren: ReactNode[]) {
   const ctx = getComponentContext();
   if (needFormat) {
     const str = fmt(...children);
-    const ref = node.attributes.ref || `text_ref_${ctx.refs.length}`;
+    const ref = allocRef(ctx, node, "text_ref");
 
-    ctx.refs.push(ref);
     ctx.body.push(
       `ui_widget_set_text(_that->refs.${ref}, ${str.__meta__.name})`
     );
     return;
   }
-  node.children = node.children.map((child) => {
+
+  node.children = children.map((child) => {
     if (typeof child === "string") {
       return {
         ...createNode("text"),
@@ -109,10 +113,8 @@ function transformNodeChildren(node: Node, rawChildren: ReactNode[]) {
     if (isObjectBinding(child)) {
       const str = fmt(child);
       const childNode = createNode("text");
-      const ref = `ref_${ctx.refs.length}`;
+      const ref = allocRef(ctx, childNode);
 
-      childNode.attributes.ref = ref;
-      ctx.refs.push(ref);
       ctx.body.push(
         `ui_widget_set_text(_that->refs.${ref}, ${str.__meta__.name})`
       );
@@ -159,6 +161,8 @@ function transformReactNode(el: ReactNode) {
     className: "class",
     $ref: "ref",
   };
+  const handlerNames = [];
+
   Object.keys(el.props).forEach((propKey) => {
     let key = propKey;
     let value = el.props[key];
@@ -170,13 +174,10 @@ function transformReactNode(el: ReactNode) {
       return;
     }
     if (key.startsWith("on")) {
-      value = transformEventHandler(
-        key.substring(2).toLocaleLowerCase(),
-        value
-      );
+      handlerNames.push(key);
+      return;
     }
     // TODO: 处理 ref
-    // TODO: 处理 style 属性的数据绑定
     if (typeof value !== "undefined") {
       node.attributes[key] = value;
     }
@@ -190,19 +191,33 @@ function transformReactNode(el: ReactNode) {
     }
     transformNodeStyle(node, el.props.style);
   }
+  handlerNames.forEach((name) => {
+    transformEventHandler(
+      node,
+      name.substring(2).toLocaleLowerCase(),
+      el.props[name]
+    );
+  });
   return node;
 }
 
-function transformEventHandler(eventName: string, handler: Function) {
+function transformEventHandler(
+  node: Node,
+  eventName: string,
+  handler: Function
+) {
   const ctx = getComponentContext();
+  const ref = allocRef(ctx, node);
   let decl = ctx.eventHandlers.find((item) => item.handler == handler);
   if (decl) {
     return decl.context.name;
   }
 
-  const name =
-    handler.name || `${eventName}_handler_${ctx.eventHandlers.length}`;
+  const name = ["handle", node.name, eventName, ctx.eventHandlers.length].join(
+    "_"
+  );
   decl = {
+    target: ref,
     eventName,
     handler,
     context: createFunctionContext(name),
@@ -212,47 +227,80 @@ function transformEventHandler(eventName: string, handler: Function) {
   return name;
 }
 
-export default function transform<T = {}>(componentFunc: React.FC<T>) {
-  const newFunc = (props: T) => {
-    const ctx: ComponentContext = {
-      ...createFunctionContext(componentFunc.displayName || componentFunc.name),
-      kind: "ComponentContext",
-      state: [],
-      eventHandlers: [],
-      stateNames: `${componentFunc}`
-        .split(/\r|\n/)
-        .filter((line) => line.includes("useState"))
-        .map((line) => {
-          const index = line.indexOf("useState");
-          if (index < 0) {
-            return "";
-          }
-          const decl = line
-            .substring(0, index)
-            .replace(/(const|let|var)\s/, "")
-            .trim();
-          const bracketLeft = decl.indexOf("[");
-          if (bracketLeft >= 0) {
-            return decl.substring(bracketLeft + 1).split(/\]|,/)[0];
-          }
-          return decl;
-        }),
-      refs: [],
-    };
-
-    setComponentContext(ctx);
-    const root = transformReactNode(componentFunc(props));
-    return {
-      name: ctx.name,
-      node: root,
-      generatedCode: [
-        compiler.compileComponentState(ctx),
-        compiler.compileComponentEventHandlers(ctx),
-        compiler.compileComponentMethods(ctx),
-      ].join("\n"),
-    };
+export default function compile<T = {}>(componentFunc: ComponentFunction<T>, props: T) {
+  const ctx: ComponentContext = {
+    ...createFunctionContext(componentFunc.displayName || componentFunc.name),
+    kind: "ComponentContext",
+    state: [],
+    eventHandlers: [],
+    stateNames: `${componentFunc}`
+      .split(/\r|\n/)
+      .filter((line) => line.includes("useState"))
+      .map((line) => {
+        const index = line.indexOf("useState");
+        if (index < 0) {
+          return "";
+        }
+        const decl = line
+          .substring(0, index)
+          .replace(/(const|let|var)\s/, "")
+          .trim();
+        const bracketLeft = decl.indexOf("[");
+        if (bracketLeft >= 0) {
+          return decl.substring(bracketLeft + 1).split(/\]|,/)[0];
+        }
+        return decl;
+      }),
+    refs: [],
   };
-  newFunc.name = componentFunc.name;
-  newFunc.origin = componentFunc;
-  return newFunc;
+
+  setComponentContext(ctx);
+  const root = transformReactNode(componentFunc(props));
+  return {
+    name: ctx.name,
+    node: root,
+    refs: ctx.refs,
+    typesCode: compiler.compileTypes(ctx),
+    reactCode: compiler.compileComponent(ctx),
+    declarationCode: `void ui_register_${ctx.name}(void);
+
+ui_widget_t *ui_create_${ctx.name}(void);
+
+void ${ctx.name}_update(ui_widget_t *w);
+`,
+    sourceCode: `typedef struct {
+        ${ctx.name}_react_t base;
+        // Add additional states to your component here
+        // ...
+} ${ctx.name}_t;
+
+static void ${ctx.name}_init(ui_widget_t *w)
+{
+        ui_widget_add_data(${ctx.name}_proto, sizeof(${ctx.name}_t));
+        ${ctx.name}_react_init(w);
+        // Write the initialization code for your component here
+        // such as state initialization, event binding, etc
+        // ...
+}
+
+void ${ctx.name}_update(ui_widget_t *w)
+{
+        ${ctx.name}_react_update(w);
+        // Write the update code for your component here
+        // ...
+}
+
+ui_widget_t *ui_create_${ctx.name}(void)
+{
+        return ui_create_widget_with_prototype(${ctx.name}_proto);
+}
+
+void ui_register_${ctx.name}(void)
+{
+        ${ctx.name}_init_prototype();
+        ${ctx.name}_proto->init = ${ctx.name}_init;
+        ${ctx.name}_proto->destroy = ${ctx.name}_destroy;
+}
+`
+  };
 }

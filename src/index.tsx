@@ -2,10 +2,10 @@
 
 import React, { createElement, Fragment } from "react";
 
-export * from './binding';
-export { default as fmt } from "./fmt";
-export { default as useState } from "./useState";
-export { default as transform } from "./transform";
+export * from './binding.js';
+export { default as fmt } from "./fmt.js";
+export { default as useState } from "./useState.js";
+export { default as compile } from "./compile.js";
 
 export interface WidgetBaseProps {
   $ref?: string;
