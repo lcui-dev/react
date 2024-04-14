@@ -1,4 +1,4 @@
-import React, { ReactElement, ReactNode } from "react";
+import React, { ReactElement, ReactNode, isValidElement } from "react";
 import {
   call,
   ComponentContext,
@@ -9,6 +9,7 @@ import {
   compiler,
 } from "./binding.js";
 import fmt from "./fmt.js";
+import { JSXObjectBinding } from "./jsx-runtime.js";
 
 type ComponentFunction<T = {}> = {
   displayName?: string;
@@ -63,7 +64,7 @@ function transformNodeStyle(node: Node, style: Record<string, any>) {
 
 function transformNodeChildren(node: Node, rawChildren: ReactNode[]) {
   let isPureText = true;
-  let needFormat = false;
+  let needFormat = true;
   const children = [];
 
   React.Children.forEach(rawChildren, (child) => {
@@ -73,16 +74,16 @@ function transformNodeChildren(node: Node, rawChildren: ReactNode[]) {
         children.push(`${child}`);
         break;
       case "object":
-        if (child) {
-          if (isObjectBinding(child)) {
-            needFormat = true;
-            children.push(child);
-          } else if (React.isValidElement(child)) {
-            isPureText = false;
+        if (isValidElement(child)) {
+          isPureText = false;
+          if (child.type === JSXObjectBinding) {
+            children.push(child.props.value);
+          } else {
+            needFormat = false;
             children.push(child);
           }
-          break;
         }
+        break;
       default:
         break;
     }
@@ -276,11 +277,19 @@ void ${ctx.name}_update(ui_widget_t *w);
 
 static void ${ctx.name}_init(ui_widget_t *w)
 {
-        ui_widget_add_data(${ctx.name}_proto, sizeof(${ctx.name}_t));
+        ui_widget_add_data(w, ${ctx.name}_proto, sizeof(${ctx.name}_t));
         ${ctx.name}_react_init(w);
         // Write the initialization code for your component here
         // such as state initialization, event binding, etc
         // ...
+}
+
+static void ${ctx.name}_destroy(ui_widget_t *w)
+{
+        // Write code here to destroy the relevant resources of the component
+        // ...
+
+        ${ctx.name}_react_destroy(w);
 }
 
 void ${ctx.name}_update(ui_widget_t *w)

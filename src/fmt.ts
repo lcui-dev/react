@@ -14,7 +14,7 @@ export default function fmt(...args: Value[]) {
     8,
     CType.Size
   );
-  const list = args.map((value) => stringifyValue(value));
+  const list = args.map((value) => stringifyValue(value).__meta__.name);
 
   ctx.body.push(...list.map((id) => `${len.__meta__.name} += strlen(${id})`));
   ctx.body.push(

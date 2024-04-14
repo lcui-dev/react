@@ -62,7 +62,7 @@ export default function useState(initialValue: Value) {
   const ctx = getComponentContext();
   const stateName =
     ctx.stateNames[ctx.state.length] || `unnamed_state_${ctx.state.length}`;
-  const stateCName = `_that->${stateName}`;
+  const stateCName = `_that->state.${stateName}`;
 
   if (isObjectBinding(initialValue)) {
     value = initialValue;

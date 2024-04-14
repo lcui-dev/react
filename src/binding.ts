@@ -262,7 +262,10 @@ function compileObjectInitializer(obj: ObjectBinding) {
   }
   switch (init.kind) {
     case SyntaxKind.StringLiteral:
-      return `strdup(${init.text})`;
+      if (init.text === 'NULL') {
+        return 'NULL';
+      }
+      return `strdup2(${init.text})`;
     case SyntaxKind.NumericLiteral:
       return init.text;
     case SyntaxKind.NewExpression:
@@ -401,52 +404,48 @@ function compileComponentEventHandlers(ctx: ComponentContext) {
   ].join("\n\n");
 }
 
-function compileComponentMethods(ctx: ComponentContext) {
-  return [
-    `static void ${ctx.name}_react_init(ui_widget_t *w)`,
-    "{",
-    `        ${ctx.name}_react_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
-    `        ${ctx.name}_load_template(w, &_that->refs);`,
-    `        ${ctx.name}_react_init_state(w);`,
-    `        ${ctx.name}_react_init_events(w);`,
-    `        ${ctx.name}_react_update(w);`,
-    "}\n",
-    `static void ${ctx.name}_react_destroy(ui_widget_t *w)`,
-    "{",
-    `        ${ctx.name}_react_destroy_state(w);`,
-    "}\n",
-    compileComponentMethod({ ctx, name: "react_update" }),
-  ].join("\n");
-}
-
 function compileTypes(ctx: ComponentContext) {
   return [
-    "typedef struct {",
+    `typedef struct ${ctx.name}_react_state {`,
     ...ctx.state.map(
       (item) =>
         `        ${getObjectTypeName(item.initializer)} ${item.identifier};`
     ),
     `} ${ctx.name}_react_state_t;`,
-    '',
-    'typedef struct {',
+    "",
+    `typedef struct ${ctx.name}_react {`,
     `        ${ctx.name}_react_state_t state;`,
     `        ${ctx.name}_refs_t refs;`,
-    `} ${ctx.name}_react_t;`
-  ].join('\n');
+    `} ${ctx.name}_react_t;`,
+  ].join("\n");
 }
 
 function compileComponent(ctx: ComponentContext) {
   return [
-    compiler.compileComponentState(ctx),
-    compiler.compileComponentEventHandlers(ctx),
-    compiler.compileComponentMethods(ctx),
+    compileComponentState(ctx),
+    compileComponentMethod({ ctx, name: "react_update" }),
+    compileComponentEventHandlers(ctx),
+    [
+      `static void ${ctx.name}_react_init(ui_widget_t *w)`,
+      "{",
+      `        ${ctx.name}_react_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
+      `        ${ctx.name}_load_template(w, &_that->refs);`,
+      `        ${ctx.name}_react_init_state(w);`,
+      `        ${ctx.name}_react_init_events(w);`,
+      `        ${ctx.name}_react_update(w);`,
+      "}\n",
+      `static void ${ctx.name}_react_destroy(ui_widget_t *w)`,
+      "{",
+      `        ${ctx.name}_react_destroy_state(w);`,
+      "}",
+    ].join("\n"),
   ].join("\n\n");
 }
 
 let contextList: FunctionContext[] = [];
 
 export function getFunctionContext() {
-  if (contextList.length < 2) {
+  if (contextList.length < 1) {
     throw new SyntaxError("FunctionContext is missing");
   }
   return contextList[contextList.length - 1];
@@ -662,10 +661,9 @@ export const compiler = {
   compileObjectDestroyer,
   compileFunction,
   compileComponentState,
-  compileComponentMethods,
   compileComponentEventHandlers,
   compileComponentMethod,
-  compileComponent
+  compileComponent,
 };
 
 export const factory = {
