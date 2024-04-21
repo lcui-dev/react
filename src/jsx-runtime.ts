@@ -4,7 +4,8 @@ import { ObjectBinding, isObjectBinding } from "./binding.js";
 
 type JSXFactor = (
   type: React.ElementType,
-  props: Record<string, any>
+  props: Record<string, any>,
+  key?: string
 ) => React.ReactElement;
 
 declare module "react/jsx-runtime" {
@@ -35,8 +36,8 @@ function transformElementProps(props: Record<string, any>) {
   return props;
 }
 
-export const jsx: JSXFactor = (type, props) =>
-  rt.jsx(type, transformElementProps(props));
+export const jsx: JSXFactor = (type, props, key) =>
+  rt.jsx(type, transformElementProps(props), key);
 
-export const jsxs: JSXFactor = (type, props) =>
-  rt.jsxs(type, transformElementProps(props));
+export const jsxs: JSXFactor = (type, props, key) =>
+  rt.jsxs(type, transformElementProps(props), key);

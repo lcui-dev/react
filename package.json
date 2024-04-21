@@ -9,7 +9,8 @@
   "description": "A React library for LCUI development",
   "license": "MIT",
   "files": [
-    "lib"
+    "lib",
+    "types.d.ts"
   ],
   "dependencies": {
     "react": "^18.2.0"
@@ -18,7 +19,7 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "typescript": "^5.2.2",
-    "@types/react": "^18.2.23"
+    "@types/react": "^18.2.23",
+    "typescript": "^5.4.2"
   }
 }

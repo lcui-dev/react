@@ -262,8 +262,8 @@ function compileObjectInitializer(obj: ObjectBinding) {
   }
   switch (init.kind) {
     case SyntaxKind.StringLiteral:
-      if (init.text === 'NULL') {
-        return 'NULL';
+      if (init.text === "NULL") {
+        return "NULL";
       }
       return `strdup2(${init.text})`;
     case SyntaxKind.NumericLiteral:
@@ -405,41 +405,56 @@ function compileComponentEventHandlers(ctx: ComponentContext) {
 }
 
 function compileTypes(ctx: ComponentContext) {
-  return [
+  const lines = [];
+
+  lines.push(
     `typedef struct ${ctx.name}_react_state {`,
-    ...ctx.state.map(
-      (item) =>
-        `        ${getObjectTypeName(item.initializer)} ${item.identifier};`
-    ),
+    ...(ctx.state.length > 0
+      ? ctx.state.map(
+          (item) =>
+            `        ${getObjectTypeName(item.initializer)} ${item.identifier};`
+        )
+      : ["        char empty;"]),
     `} ${ctx.name}_react_state_t;`,
     "",
     `typedef struct ${ctx.name}_react {`,
-    `        ${ctx.name}_react_state_t state;`,
-    `        ${ctx.name}_refs_t refs;`,
-    `} ${ctx.name}_react_t;`,
-  ].join("\n");
+    `        ${ctx.name}_react_state_t state;`
+  );
+  if (ctx.refs.length > 0) {
+    lines.push(`        ${ctx.name}_refs_t refs;`);
+  }
+  lines.push(`} ${ctx.name}_react_t;`);
+  return lines.join("\n");
 }
 
 function compileComponent(ctx: ComponentContext) {
+  const hasState = ctx.state.length > 0;
+  const hasEvents = ctx.eventHandlers.length > 0;
   return [
-    compileComponentState(ctx),
+    hasState && compileComponentState(ctx),
     compileComponentMethod({ ctx, name: "react_update" }),
-    compileComponentEventHandlers(ctx),
+    hasEvents && compileComponentEventHandlers(ctx),
     [
       `static void ${ctx.name}_react_init(ui_widget_t *w)`,
       "{",
       `        ${ctx.name}_react_t *_that = ui_widget_get_data(w, ${ctx.name}_proto);`,
-      `        ${ctx.name}_load_template(w, &_that->refs);`,
-      `        ${ctx.name}_react_init_state(w);`,
-      `        ${ctx.name}_react_init_events(w);`,
-      `        ${ctx.name}_react_update(w);`,
+      `        ${ctx.name}_load_template(w${
+        ctx.refs.length > 0 ? ", &_that->refs" : ""
+      });`,
+      hasState && `        ${ctx.name}_react_init_state(w);`,
+      hasEvents && `        ${ctx.name}_react_init_events(w);`,
+      hasState && `        ${ctx.name}_react_update(w);`,
       "}\n",
       `static void ${ctx.name}_react_destroy(ui_widget_t *w)`,
       "{",
-      `        ${ctx.name}_react_destroy_state(w);`,
+      hasState && `        ${ctx.name}_react_destroy_state(w);`,
       "}",
-    ].join("\n"),
-  ].join("\n\n");
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 let contextList: FunctionContext[] = [];

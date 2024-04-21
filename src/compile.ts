@@ -10,6 +10,7 @@ import {
 } from "./binding.js";
 import fmt from "./fmt.js";
 import { JSXObjectBinding } from "./jsx-runtime.js";
+import { RouterView } from "./widgets.js";
 
 type ComponentFunction<T = {}> = {
   displayName?: string;
@@ -42,13 +43,16 @@ function allocRef(ctx, node, prefix = "ref_") {
   return ref;
 }
 
+const toDashCase = (str: string) =>
+  str.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+
 function transformNodeStyle(node: Node, style: Record<string, any>) {
   const ctx = getComponentContext();
   const ref = allocRef(ctx, node);
 
   Object.keys(style).forEach((key) => {
     const value = style[key];
-    const propKey = key.toLocaleLowerCase();
+    const propKey = toDashCase(key);
     let identify = `unknown_${typeof value}`;
 
     if (isObjectBinding(value)) {
@@ -57,7 +61,7 @@ function transformNodeStyle(node: Node, style: Record<string, any>) {
       identify = `"${value}"`;
     }
     ctx.body.push(
-      `ui_widget_set_style_string(_that->refs.${ref}, ${propKey}, ${identify})`
+      `ui_widget_set_style_string(_that->refs.${ref}, "${propKey}", ${identify})`
     );
   });
 }
@@ -187,8 +191,11 @@ function transformReactNode(el: ReactNode) {
     transformNodeChildren(node, el.props.children);
   }
   if (el.props.style) {
-    if (typeof node.attributes.style !== "object") {
-      throw SyntaxError("The style attribute value must be an object");
+    if (typeof el.props.style !== "object") {
+      throw SyntaxError(
+        `The style attribute value must be an object, not ${typeof el.props
+          .style}`
+      );
     }
     transformNodeStyle(node, el.props.style);
   }
@@ -228,9 +235,15 @@ function transformEventHandler(
   return name;
 }
 
-export default function compile<T = {}>(componentFunc: ComponentFunction<T>, props: T) {
+export default function compile<T = {}>(
+  componentFunc: ComponentFunction<T>,
+  props: T,
+  options: { target?: "Widget" | "AppRouter"; name?: string }
+) {
   const ctx: ComponentContext = {
-    ...createFunctionContext(componentFunc.displayName || componentFunc.name),
+    ...createFunctionContext(
+      options?.name || componentFunc.displayName || componentFunc.name
+    ),
     kind: "ComponentContext",
     state: [],
     eventHandlers: [],
@@ -256,10 +269,23 @@ export default function compile<T = {}>(componentFunc: ComponentFunction<T>, pro
   };
 
   setComponentContext(ctx);
-  const root = transformReactNode(componentFunc(props));
+
+  let el;
+  switch (options?.target) {
+    case "AppRouter":
+      el = componentFunc({
+        ...props,
+        children: React.createElement(RouterView),
+      });
+      break;
+    default:
+      el = componentFunc(props);
+      break;
+  }
+
   return {
-    name: ctx.name,
-    node: root,
+    name: options.name || ctx.name,
+    node: transformReactNode(el),
     refs: ctx.refs,
     typesCode: compiler.compileTypes(ctx),
     reactCode: compiler.compileComponent(ctx),
@@ -295,7 +321,7 @@ static void ${ctx.name}_destroy(ui_widget_t *w)
 void ${ctx.name}_update(ui_widget_t *w)
 {
         ${ctx.name}_react_update(w);
-        // Write the update code for your component here
+        // Write code here to update other content of your component
         // ...
 }
 
@@ -310,6 +336,6 @@ void ui_register_${ctx.name}(void)
         ${ctx.name}_proto->init = ${ctx.name}_init;
         ${ctx.name}_proto->destroy = ${ctx.name}_destroy;
 }
-`
+`,
   };
 }

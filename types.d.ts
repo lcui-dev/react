@@ -1,12 +1,3 @@
-declare namespace JSX {
-  interface IntrinsicElements {
-    a: LinkProps;
-    text: WidgetBaseProps;
-    textinput: TextInputProps;
-    widget: WidgetProps;
-    div: WidgetProps;
-  }
-}
 
 // The following content is copied from: https://github.com/vitejs/vite/blob/main/packages/vite/client.d.ts
 
