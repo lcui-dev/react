@@ -78,6 +78,8 @@ export interface ComponentContext extends FunctionContext {
   stateNames: string[];
   eventHandlers: EventHandlerDeclaration[];
   refs: string[];
+  refNames: string[];
+  headerFiles: Set<string>;
 }
 
 enum BindingKind {
@@ -96,6 +98,7 @@ interface ObjectBindingMeta {
   name: string;
   owner?: BindingBase;
   type: CType;
+  keepAlive?: Boolean;
   initializer?: InitializerExpression;
 }
 
@@ -288,6 +291,9 @@ function compileVariableDeclaration(decl: VariableDeclaration) {
 function compileObjectDestroyer(obj: ObjectBinding) {
   const init = obj.__meta__.initializer;
 
+  if (obj.__meta__.keepAlive) {
+    return "";
+  }
   if (!init) {
     throw new SyntaxError("missing initializer");
   }
@@ -359,7 +365,7 @@ function compileComponentMethod({
     body: [
       `${className}_react_t *_that = ui_widget_get_data(${thatId}, ${className}_proto)`,
       ...(body || []),
-      ctx?.hasStateOperation && `${className}_react_update(w)`,
+      ctx?.hasStateOperation && `${className}_react_update(${thatId})`,
     ],
   });
 }
@@ -502,9 +508,9 @@ function createStringLiteral(value: string | null = null): StringLiteral {
   };
 }
 
-function createBinding(meta: BindingMeta) {
+function createBinding(meta: BindingMeta, data: Record<string, any> = {}) {
   const binding = new Proxy(
-    { __meta__: meta },
+    { __meta__: meta, ...data },
     {
       get(target, p, receiver) {
         if (p in target) {
@@ -546,8 +552,11 @@ function createBinding(meta: BindingMeta) {
   return binding;
 }
 
-function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">) {
-  return createBinding({ ...meta, kind: BindingKind.Object }) as ObjectBinding;
+function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">, data = {}) {
+  return createBinding(
+    { ...meta, kind: BindingKind.Object },
+    data
+  ) as ObjectBinding;
 }
 
 export function isObjectBinding(val: any): val is ObjectBinding {

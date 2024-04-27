@@ -27,7 +27,7 @@ function isElement(el: ReactElement): el is Element {
 function createNode(name = "") {
   return {
     type: "element",
-    name: "",
+    name,
     text: "",
     attributes: {} as Record<string, string>,
     children: [],
@@ -151,11 +151,7 @@ function transformReactNode(el: ReactNode) {
     }
   } else if (isElement(el)) {
     if (el.type.shouldPreRender) {
-      const newNode = transformReactNode(el.type(el.props));
-      if (el.props.$ref) {
-        newNode.attributes.ref = el.props.$ref;
-      }
-      return newNode;
+      return transformReactNode(el.type(el.props));
     }
     node.name = el.type.displayName || el.type.name;
   } else {
@@ -182,11 +178,16 @@ function transformReactNode(el: ReactNode) {
       handlerNames.push(key);
       return;
     }
-    // TODO: 处理 ref
     if (typeof value !== "undefined") {
       node.attributes[key] = value;
     }
   });
+  const ref = node.attributes.ref as string | Record<string, any>;
+  // TODO: 将事件处理函数放到 ref 生成后执行
+  if (ref && typeof ref !== "string") {
+    node.attributes.ref = ref.name;
+    ref.current.type = typeof el.type === "string" ? el.type : el.type.name;
+  }
   if (el.props.children) {
     transformNodeChildren(node, el.props.children);
   }
@@ -235,37 +236,44 @@ function transformEventHandler(
   return name;
 }
 
+function parseHookValueNames(funcStr: string, hook: string) {
+  return funcStr
+    .split(/\r|\n/)
+    .filter((line) => line.includes(hook))
+    .map((line) => {
+      const index = line.indexOf(hook);
+      if (index < 0) {
+        return "";
+      }
+      const decl = line
+        .substring(0, index)
+        .replace(/(const|let|var)\s/, "")
+        .trim();
+      const bracketLeft = decl.indexOf("[");
+      if (bracketLeft >= 0) {
+        return decl.substring(bracketLeft + 1).split(/\]|,/)[0];
+      }
+      return decl.split("=")[0].trim();
+    });
+}
+
 export default function compile<T = {}>(
   componentFunc: ComponentFunction<T>,
   props: T,
   options: { target?: "Widget" | "AppRouter"; name?: string }
 ) {
+  const funcStr = `${componentFunc}`;
   const ctx: ComponentContext = {
     ...createFunctionContext(
       options?.name || componentFunc.displayName || componentFunc.name
     ),
     kind: "ComponentContext",
     state: [],
-    eventHandlers: [],
-    stateNames: `${componentFunc}`
-      .split(/\r|\n/)
-      .filter((line) => line.includes("useState"))
-      .map((line) => {
-        const index = line.indexOf("useState");
-        if (index < 0) {
-          return "";
-        }
-        const decl = line
-          .substring(0, index)
-          .replace(/(const|let|var)\s/, "")
-          .trim();
-        const bracketLeft = decl.indexOf("[");
-        if (bracketLeft >= 0) {
-          return decl.substring(bracketLeft + 1).split(/\]|,/)[0];
-        }
-        return decl;
-      }),
     refs: [],
+    eventHandlers: [],
+    stateNames: parseHookValueNames(funcStr, "useState"),
+    refNames: parseHookValueNames(funcStr, "useRef"),
+    headerFiles: new Set(),
   };
 
   setComponentContext(ctx);
@@ -287,6 +295,7 @@ export default function compile<T = {}>(
     name: options.name || ctx.name,
     node: transformReactNode(el),
     refs: ctx.refs,
+    headerFiles: Array.from(ctx.headerFiles),
     typesCode: compiler.compileTypes(ctx),
     reactCode: compiler.compileComponent(ctx),
     declarationCode: `void ui_register_${ctx.name}(void);

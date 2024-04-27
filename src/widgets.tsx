@@ -1,7 +1,7 @@
 import React from "react";
 
 interface WidgetBaseAttributes {
-  $ref?: string;
+  $ref?: string | { name: string; current: any };
   className?: string;
   children?: any;
   [x: string]: any;
@@ -27,8 +27,6 @@ interface RouterLinkAttributes extends WidgetBaseAttributes {
 }
 
 interface RouterViewAttributes extends WidgetBaseAttributes {
-  router?: string;
-
   /** @see https://router.vuejs.org/zh/guide/essentials/named-views.html */
   name?: string;
 }
@@ -92,7 +90,7 @@ export function RouterLink({
     "active-class": activeClass,
     exact: exact ? "exact" : "",
     "exact-active-class": exactActiveClass,
-    ...otherProps
+    ...otherProps,
   } as const;
   return <router-link {...props} />;
 }
