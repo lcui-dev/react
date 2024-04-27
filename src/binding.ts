@@ -78,6 +78,8 @@ export interface ComponentContext extends FunctionContext {
   stateNames: string[];
   eventHandlers: EventHandlerDeclaration[];
   refs: string[];
+  refNames: string[];
+  headerFiles: Set<string>;
 }
 
 enum BindingKind {
@@ -502,9 +504,9 @@ function createStringLiteral(value: string | null = null): StringLiteral {
   };
 }
 
-function createBinding(meta: BindingMeta) {
+function createBinding(meta: BindingMeta, data: Record<string, any> = {}) {
   const binding = new Proxy(
-    { __meta__: meta },
+    { __meta__: meta, ...data },
     {
       get(target, p, receiver) {
         if (p in target) {
@@ -546,8 +548,11 @@ function createBinding(meta: BindingMeta) {
   return binding;
 }
 
-function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">) {
-  return createBinding({ ...meta, kind: BindingKind.Object }) as ObjectBinding;
+function createObjectBinding(meta: Omit<ObjectBindingMeta, "kind">, data = {}) {
+  return createBinding(
+    { ...meta, kind: BindingKind.Object },
+    data
+  ) as ObjectBinding;
 }
 
 export function isObjectBinding(val: any): val is ObjectBinding {
