@@ -19,6 +19,11 @@ interface TextInputAttributes extends WidgetBaseAttributes {
   placeholder?: string;
 }
 
+interface ScrollbarAttributes extends WidgetBaseAttributes {
+  direction?: "horizontal" | "vertical";
+  target: string;
+}
+
 interface RouterLinkAttributes extends WidgetBaseAttributes {
   to: string;
   exact?: "exact" | "";
@@ -36,6 +41,7 @@ declare module "react" {
     interface IntrinsicElements {
       widget: WidgetAttributes;
       textinput: TextInputAttributes;
+      scrollbar: ScrollbarAttributes;
       "router-link": RouterLinkAttributes;
       "router-view": RouterViewAttributes;
     }
@@ -46,6 +52,7 @@ export type WidgetProps = WidgetAttributes;
 export type WidgetBaseProps = WidgetBaseAttributes;
 export type LinkProps = LinkAttributes;
 export type RouterViewProps = RouterViewAttributes;
+export type ScrollbarProps = ScrollbarAttributes;
 
 export interface RouterLinkProps extends WidgetBaseProps {
   to: string;
@@ -78,6 +85,10 @@ export function Widget(props: WidgetProps) {
   return <widget {...props} />;
 }
 
+export function Scrollbar(props: ScrollbarProps) {
+  return <scrollbar {...props} />;
+}
+
 export function RouterLink({
   exact,
   to,
@@ -104,5 +115,6 @@ Button.shouldPreRender = true;
 Link.shouldPreRender = true;
 Text.shouldPreRender = true;
 TextInput.shouldPreRender = true;
+Scrollbar.shouldPreRender = true;
 RouterLink.shouldPreRender = true;
 RouterView.shouldPreRender = true;
