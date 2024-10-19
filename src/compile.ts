@@ -31,16 +31,25 @@ function createNode(name = "") {
     text: "",
     attributes: {} as Record<string, string>,
     children: [],
+    isRoot: false,
   };
 }
 
 type Node = ReturnType<typeof createNode>;
 
-function allocRef(ctx, node, prefix = "ref_") {
-  const ref = node.attributes.ref || `${prefix}${ctx.refs.length}`;
-  ctx.refs.push(ref);
-  node.attributes.ref = ref;
-  return ref;
+function allocRef(ctx: ComponentContext, node: Node, prefix = "ref_") {
+  if (node.isRoot) {
+    return {
+      cName: 'w',
+    };
+  }
+  const refName = node.attributes.ref || `${prefix}${ctx.refs.length}`;
+  ctx.refs.push(refName);
+  node.attributes.ref = refName;
+  return {
+    name: refName,
+    cName: `_that->refs.${refName}`
+  };
 }
 
 const toDashCase = (str: string) =>
@@ -52,6 +61,10 @@ function transformNodeStyle(node: Node, style: Record<string, any>) {
 
   Object.keys(style).forEach((key) => {
     const value = style[key];
+    if (value === undefined) {
+      return;
+    }
+
     const propKey = toDashCase(key);
     let identify = `unknown_${typeof value}`;
 
@@ -61,7 +74,7 @@ function transformNodeStyle(node: Node, style: Record<string, any>) {
       identify = `"${value}"`;
     }
     ctx.body.push(
-      `ui_widget_set_style_string(_that->refs.${ref}, "${propKey}", ${identify})`
+      `ui_widget_set_style_string(${ref.cName}, "${propKey}", ${identify})`
     );
   });
 }
@@ -103,7 +116,7 @@ function transformNodeChildren(node: Node, rawChildren: ReactNode[]) {
     const ref = allocRef(ctx, node, "text_ref");
 
     ctx.body.push(
-      `ui_widget_set_text(_that->refs.${ref}, ${str.__meta__.name})`
+      `ui_widget_set_text(${ref.cName}, ${str.__meta__.name})`
     );
     return;
   }
@@ -121,7 +134,7 @@ function transformNodeChildren(node: Node, rawChildren: ReactNode[]) {
       const ref = allocRef(ctx, childNode);
 
       ctx.body.push(
-        `ui_widget_set_text(_that->refs.${ref}, ${str.__meta__.name})`
+        `ui_widget_set_text(${ref.cName}, ${str.__meta__.name})`
       );
       return childNode;
     }
@@ -129,8 +142,9 @@ function transformNodeChildren(node: Node, rawChildren: ReactNode[]) {
   });
 }
 
-function transformReactNode(el: ReactNode) {
+function transformReactNode(el: ReactNode, isRoot = false) {
   let node = createNode();
+  node.isRoot = isRoot;
 
   if (!React.isValidElement(el)) {
     return;
@@ -151,7 +165,7 @@ function transformReactNode(el: ReactNode) {
     }
   } else if (isElement(el)) {
     if (el.type.shouldPreRender) {
-      return transformReactNode(el.type(el.props));
+      return transformReactNode(el.type(el.props), isRoot);
     }
     node.name = el.type.displayName || el.type.name;
   } else {
@@ -184,9 +198,14 @@ function transformReactNode(el: ReactNode) {
   });
   const ref = node.attributes.ref as string | Record<string, any>;
   // TODO: 将事件处理函数放到 ref 生成后执行
-  if (ref && typeof ref !== "string") {
-    node.attributes.ref = ref.name;
-    ref.current.type = typeof el.type === "string" ? el.type : el.type.name;
+  if (ref) {
+    const ctx = getComponentContext();
+    if (typeof ref === "string") {
+      ctx.refs.push(ref);
+    } else {
+      node.attributes.ref = ref.name;
+      ref.current.type = typeof el.type === "string" ? el.type : el.type.name;
+    }
   }
   if (el.props.children) {
     transformNodeChildren(node, el.props.children);
@@ -226,14 +245,14 @@ function transformEventHandler(
     "_"
   );
   decl = {
-    target: ref,
+    target: ref.cName,
     eventName,
     handler,
     context: createFunctionContext(name),
   };
   ctx.eventHandlers.push(decl);
   if (handler instanceof Function) {
-  call(handler, decl.context);
+    call(handler, decl.context);
   }
   return name;
 }
@@ -295,7 +314,7 @@ export default function compile<T = {}>(
 
   return {
     name: options.name || ctx.name,
-    node: transformReactNode(el),
+    node: transformReactNode(el, true),
     refs: ctx.refs,
     headerFiles: Array.from(ctx.headerFiles),
     typesCode: compiler.compileTypes(ctx),
@@ -319,6 +338,13 @@ static void ${ctx.name}_init(ui_widget_t *w)
         // Write the initialization code for your component here
         // such as state initialization, event binding, etc
         // ...
+
+        ${ctx.name}_update(w);
+}
+
+static ${ctx.name}_t *${ctx.name}_get(ui_widget_t *w)
+{
+        return ui_widget_get_data(w, ${ctx.name}_proto);
 }
 
 static void ${ctx.name}_destroy(ui_widget_t *w)

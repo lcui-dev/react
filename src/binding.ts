@@ -407,7 +407,7 @@ function compileComponentEventHandlers(ctx: ComponentContext) {
       name: "react_init_events",
       body: ctx.eventHandlers.map(
         (item) =>
-          `ui_widget_on(_that->refs.${item.target}, "${item.eventName}", ${
+          `ui_widget_on(${item.target}, "${item.eventName}", ${
             typeof item.handler === "string"
               ? item.handler
               : `${ctx.name}_${item.context.name}`
