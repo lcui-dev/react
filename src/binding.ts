@@ -201,7 +201,7 @@ function compileCallExpression(identifier: string, args: Value[]) {
   return `${identifier}(${argsStr})`;
 }
 
-export function createStringBinding(name: string, value: string | null = null) {
+function createStringBinding(name: string, value: string | null = null) {
   return createObjectBinding({
     name,
     type: CType.String,
@@ -664,7 +664,7 @@ function createNumericBinding(
 ) {
   return createObjectBinding({
     name,
-    type: CType.Size,
+    type,
     initializer: createNumericLiteral(value, type),
   });
 }

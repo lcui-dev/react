@@ -11,6 +11,7 @@ import {
   getFunctionContext,
   factory,
   compiler,
+  isNumericType,
 } from "./binding.js";
 
 function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
@@ -57,7 +58,7 @@ function setObjectBindingValue(obj: ObjectBinding, newValue: Value) {
   );
 }
 
-export default function useState(initialValue: Value) {
+export default function useState(initialValue: Value, valueType?: CType) {
   let value: ObjectBinding;
   const ctx = getComponentContext();
   const stateName =
@@ -74,14 +75,23 @@ export default function useState(initialValue: Value) {
   } else {
     switch (typeof initialValue) {
       case "boolean":
-        value = factory.createObjectBinding({ name: stateCName, type: CType.Boolean });
+        value = factory.createObjectBinding({
+          name: stateCName,
+          type: CType.Boolean,
+        });
         break;
       case "string":
         value = factory.createStringBinding(stateCName, initialValue);
         break;
       case "number":
-        value = factory.createNumericBinding(stateCName, initialValue);
-        break;
+        if (isNumericType(valueType)) {
+          value = factory.createNumericBinding(
+            stateCName,
+            initialValue,
+            valueType
+          );
+          break;
+        }
       default:
         throw new SyntaxError(`Unsupported type: ${typeof initialValue}`);
     }
