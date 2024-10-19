@@ -2,11 +2,13 @@ import {
   CType,
   Value,
   factory,
+  getComponentContext,
   getFunctionContext,
   stringifyValue,
 } from "./binding.js";
 
 export default function fmt(...args: Value[]) {
+  const component = getComponentContext();
   const ctx = getFunctionContext();
   const str = factory.createStringVariable();
   const len = factory.createNumericVariable(
@@ -16,6 +18,9 @@ export default function fmt(...args: Value[]) {
   );
   const list = args.map((value) => stringifyValue(value).__meta__.name);
 
+  component.headerFiles.add('<stdlib.h>');
+  component.headerFiles.add('<stdio.h>');
+  component.headerFiles.add('<string.h>');
   ctx.body.push(...list.map((id) => `${len.__meta__.name} += strlen(${id})`));
   ctx.body.push(
     `${str.__meta__.name} = malloc(sizeof(char) * ${len.__meta__.name})`
