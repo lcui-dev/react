@@ -213,7 +213,7 @@ function transformReactNode(el: ReactNode) {
 function transformEventHandler(
   node: Node,
   eventName: string,
-  handler: Function
+  handler: string | Function
 ) {
   const ctx = getComponentContext();
   const ref = allocRef(ctx, node);
@@ -232,7 +232,9 @@ function transformEventHandler(
     context: createFunctionContext(name),
   };
   ctx.eventHandlers.push(decl);
+  if (handler instanceof Function) {
   call(handler, decl.context);
+  }
   return name;
 }
 

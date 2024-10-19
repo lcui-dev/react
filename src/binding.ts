@@ -68,7 +68,7 @@ export interface FunctionContext {
 interface EventHandlerDeclaration {
   eventName: string;
   target: string;
-  handler: Function;
+  handler: string | Function;
   context: FunctionContext;
 }
 
@@ -393,18 +393,25 @@ function compileComponentState(ctx: ComponentContext) {
 
 function compileComponentEventHandlers(ctx: ComponentContext) {
   return [
-    ...ctx.eventHandlers.map((item) =>
-      compileComponentMethod({
+    ...ctx.eventHandlers.map((item) => {
+      if (typeof item.handler === "string") {
+        return `static void ${item.handler}(ui_widget_t *w, ui_event_t *e, void *arg);`;
+      }
+      return compileComponentMethod({
         ctx: item.context,
         args: ", ui_event_t *e, void *arg",
         thatId: "e->data",
-      })
-    ),
+      });
+    }),
     compileComponentMethod({
       name: "react_init_events",
       body: ctx.eventHandlers.map(
         (item) =>
-          `ui_widget_on(_that->refs.${item.target}, "${item.eventName}", ${ctx.name}_${item.context.name}, w)`
+          `ui_widget_on(_that->refs.${item.target}, "${item.eventName}", ${
+            typeof item.handler === "string"
+              ? item.handler
+              : `${ctx.name}_${item.context.name}`
+          }, w)`
       ),
     }),
   ].join("\n\n");
