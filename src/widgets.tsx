@@ -20,8 +20,7 @@ interface TextInputAttributes extends WidgetBaseAttributes {
 }
 
 interface ScrollbarAttributes extends WidgetBaseAttributes {
-  direction?: "horizontal" | "vertical";
-  target: string;
+  orientation?: "horizontal" | "vertical";
 }
 
 interface RouterLinkAttributes extends WidgetBaseAttributes {
@@ -42,6 +41,8 @@ declare module "react" {
       widget: WidgetAttributes;
       textinput: TextInputAttributes;
       scrollbar: ScrollbarAttributes;
+      scrollarea: WidgetBaseAttributes;
+      "scrollarea-content": WidgetBaseAttributes;
       "router-link": RouterLinkAttributes;
       "router-view": RouterViewAttributes;
     }
@@ -89,6 +90,14 @@ export function Scrollbar(props: ScrollbarProps) {
   return <scrollbar {...props} />;
 }
 
+export function ScrollArea(props: WidgetBaseProps) {
+  return <scrollarea {...props} />;
+}
+
+export function ScrollAreaContent(props: WidgetBaseProps) {
+  return <scrollarea-content {...props} />;
+}
+
 export function RouterLink({
   exact,
   to,
@@ -115,6 +124,8 @@ Button.shouldPreRender = true;
 Link.shouldPreRender = true;
 Text.shouldPreRender = true;
 TextInput.shouldPreRender = true;
+ScrollArea.shouldPreRender = true;
+ScrollAreaContent.shouldPreRender = true;
 Scrollbar.shouldPreRender = true;
 RouterLink.shouldPreRender = true;
 RouterView.shouldPreRender = true;
