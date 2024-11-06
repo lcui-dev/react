@@ -1,4 +1,5 @@
 import React, { ReactElement, ReactNode, isValidElement } from "react";
+import { snakeCase } from "change-case-all";
 import {
   call,
   ComponentContext,
@@ -167,7 +168,7 @@ function transformReactNode(el: ReactNode, isRoot = false) {
     if (el.type.shouldPreRender) {
       return transformReactNode(el.type(el.props), isRoot);
     }
-    node.name = el.type.displayName || el.type.name;
+    node.name = snakeCase(el.type.displayName || el.type.name);
   } else {
     return;
   }
