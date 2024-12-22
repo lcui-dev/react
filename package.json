@@ -12,6 +12,11 @@
     "lib",
     "types.d.ts"
   ],
+  "scripts": {
+    "test": "echo \"no test specified\"",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
+    "version": "npm run changelog && git add CHANGELOG.md"
+  },
   "dependencies": {
     "change-case-all": "^2.1.0",
     "react": "^18.2.0"
