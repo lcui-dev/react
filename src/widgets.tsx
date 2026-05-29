@@ -54,7 +54,8 @@ export type WidgetBaseProps = WidgetBaseAttributes;
 export type LinkProps = LinkAttributes;
 export type RouterViewProps = RouterViewAttributes;
 export type ScrollbarProps = ScrollbarAttributes;
-type WidgetComponent<T = WidgetBaseProps> = ((props: T) => React.ReactElement) & {
+
+export type FunctionWidget<T = WidgetBaseProps> = ((props: T) => React.ReactElement) & {
   shouldPreRender?: boolean;
 };
 
@@ -69,45 +70,38 @@ export interface TextInputProps extends WidgetBaseProps {
   placeholder?: string;
 }
 
-export function Text(props: WidgetBaseProps) {
-  return <text {...props} />;
+function withWidgetMeta<T extends WidgetBaseProps>(
+  render: (props: T) => React.ReactElement
+): FunctionWidget<T> {
+  const widget = ((props: T) => render(props)) as FunctionWidget<T>;
+  widget.shouldPreRender = true;
+  return widget;
 }
 
-export function TextInput(props: TextInputProps) {
-  return <textinput {...props} />;
+function createTagWidget<T extends WidgetBaseProps>(tag: string): FunctionWidget<T> {
+  return withWidgetMeta((props: T) => React.createElement(tag, props));
 }
 
-export function Link(props: LinkProps) {
-  return <a {...props} />;
-}
+export const Text: FunctionWidget<WidgetBaseProps> = createTagWidget("text");
+export const TextInput: FunctionWidget<TextInputProps> =
+  createTagWidget("textinput");
+export const Link: FunctionWidget<LinkProps> = createTagWidget("a");
+export const Button: FunctionWidget<WidgetBaseProps> = createTagWidget("button");
+export const Widget: FunctionWidget<WidgetProps> = createTagWidget("widget");
+export const Scrollbar: FunctionWidget<ScrollbarProps> =
+  createTagWidget("scrollbar");
+export const ScrollArea: FunctionWidget<WidgetBaseProps> =
+  createTagWidget("scrollarea");
+export const ScrollAreaContent: FunctionWidget<WidgetBaseProps> =
+  createTagWidget("scrollarea-content");
 
-export function Button(props: WidgetBaseProps) {
-  return <button {...props} />;
-}
-
-export function Widget(props: WidgetProps) {
-  return <widget {...props} />;
-}
-
-export function Scrollbar(props: ScrollbarProps) {
-  return <scrollbar {...props} />;
-}
-
-export function ScrollArea(props: WidgetBaseProps) {
-  return <scrollarea {...props} />;
-}
-
-export function ScrollAreaContent(props: WidgetBaseProps) {
-  return <scrollarea-content {...props} />;
-}
-
-export function RouterLink({
+export const RouterLink: FunctionWidget<RouterLinkProps> = withWidgetMeta(({
   exact,
   to,
   activeClass = "",
   exactActiveClass = "",
   ...otherProps
-}: RouterLinkProps) {
+}: RouterLinkProps) => {
   const props = {
     to,
     "active-class": activeClass,
@@ -116,19 +110,7 @@ export function RouterLink({
     ...otherProps,
   } as const;
   return <router-link {...props} />;
-}
+});
 
-export function RouterView(props: RouterViewProps) {
-  return <router-view {...props} />;
-}
-
-(Widget as WidgetComponent<WidgetProps>).shouldPreRender = true;
-(Button as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
-(Link as WidgetComponent<LinkProps>).shouldPreRender = true;
-(Text as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
-(TextInput as WidgetComponent<TextInputProps>).shouldPreRender = true;
-(ScrollArea as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
-(ScrollAreaContent as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
-(Scrollbar as WidgetComponent<ScrollbarProps>).shouldPreRender = true;
-(RouterLink as WidgetComponent<RouterLinkProps>).shouldPreRender = true;
-(RouterView as WidgetComponent<RouterViewProps>).shouldPreRender = true;
+export const RouterView: FunctionWidget<RouterViewProps> =
+  createTagWidget("router-view");

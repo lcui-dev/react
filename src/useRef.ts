@@ -15,7 +15,7 @@ class WidgetInstance {
     this.ident = ident;
   }
 
-  getTextInputValue() {
+  getTextInputValue(): ObjectBinding {
     const ctx = getFunctionContext();
     const str = factory.createStringVariable();
     const len = factory.createNumericVariable(
@@ -40,7 +40,7 @@ class WidgetInstance {
   setTextInputValue(value: string | ObjectBinding) {
     const ctx = getFunctionContext();
     const str = stringifyValue(value);
-    ctx.body.push(`ui_textinput_set_text(${this.ident}, ${str.__meta__.name}`);
+    ctx.body.push(`ui_textinput_set_text(${this.ident}, ${str.__meta__.name})`);
   }
 
   get value(): ObjectBinding {
