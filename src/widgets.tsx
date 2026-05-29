@@ -82,18 +82,16 @@ function createTagWidget<T extends WidgetBaseProps>(tag: string): FunctionWidget
   return withWidgetMeta((props: T) => React.createElement(tag, props));
 }
 
-export const Text: FunctionWidget<WidgetBaseProps> = createTagWidget("text");
-export const TextInput: FunctionWidget<TextInputProps> =
-  createTagWidget("textinput");
-export const Link: FunctionWidget<LinkProps> = createTagWidget("a");
-export const Button: FunctionWidget<WidgetBaseProps> = createTagWidget("button");
-export const Widget: FunctionWidget<WidgetProps> = createTagWidget("widget");
-export const Scrollbar: FunctionWidget<ScrollbarProps> =
-  createTagWidget("scrollbar");
-export const ScrollArea: FunctionWidget<WidgetBaseProps> =
-  createTagWidget("scrollarea");
-export const ScrollAreaContent: FunctionWidget<WidgetBaseProps> =
-  createTagWidget("scrollarea-content");
+export const Text = createTagWidget<WidgetBaseProps>("text");
+export const TextInput = createTagWidget<TextInputProps>("textinput");
+export const Link = createTagWidget<LinkProps>("a");
+export const Button = createTagWidget<WidgetBaseProps>("button");
+export const Widget = createTagWidget<WidgetProps>("widget");
+export const Scrollbar = createTagWidget<ScrollbarProps>("scrollbar");
+export const ScrollArea = createTagWidget<WidgetBaseProps>("scrollarea");
+export const ScrollAreaContent = createTagWidget<WidgetBaseProps>(
+  "scrollarea-content"
+);
 
 export const RouterLink: FunctionWidget<RouterLinkProps> = withWidgetMeta(({
   exact,
@@ -112,5 +110,4 @@ export const RouterLink: FunctionWidget<RouterLinkProps> = withWidgetMeta(({
   return <router-link {...props} />;
 });
 
-export const RouterView: FunctionWidget<RouterViewProps> =
-  createTagWidget("router-view");
+export const RouterView = createTagWidget<RouterViewProps>("router-view");
