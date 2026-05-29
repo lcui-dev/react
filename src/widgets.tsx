@@ -54,6 +54,9 @@ export type WidgetBaseProps = WidgetBaseAttributes;
 export type LinkProps = LinkAttributes;
 export type RouterViewProps = RouterViewAttributes;
 export type ScrollbarProps = ScrollbarAttributes;
+type WidgetComponent<T = WidgetBaseProps> = ((props: T) => React.ReactElement) & {
+  shouldPreRender?: boolean;
+};
 
 export interface RouterLinkProps extends WidgetBaseProps {
   to: string;
@@ -119,13 +122,13 @@ export function RouterView(props: RouterViewProps) {
   return <router-view {...props} />;
 }
 
-Widget.shouldPreRender = true;
-Button.shouldPreRender = true;
-Link.shouldPreRender = true;
-Text.shouldPreRender = true;
-TextInput.shouldPreRender = true;
-ScrollArea.shouldPreRender = true;
-ScrollAreaContent.shouldPreRender = true;
-Scrollbar.shouldPreRender = true;
-RouterLink.shouldPreRender = true;
-RouterView.shouldPreRender = true;
+(Widget as WidgetComponent<WidgetProps>).shouldPreRender = true;
+(Button as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
+(Link as WidgetComponent<LinkProps>).shouldPreRender = true;
+(Text as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
+(TextInput as WidgetComponent<TextInputProps>).shouldPreRender = true;
+(ScrollArea as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
+(ScrollAreaContent as WidgetComponent<WidgetBaseProps>).shouldPreRender = true;
+(Scrollbar as WidgetComponent<ScrollbarProps>).shouldPreRender = true;
+(RouterLink as WidgetComponent<RouterLinkProps>).shouldPreRender = true;
+(RouterView as WidgetComponent<RouterViewProps>).shouldPreRender = true;

@@ -5,6 +5,7 @@
     "module": "NodeNext",
     "declaration": true,
     "outDir": "./lib",
+    "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
